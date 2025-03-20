@@ -1,6 +1,14 @@
+import json
+import requests
+from kivy.network.urlrequest import UrlRequest
+from kivy.uix.scrollview import ScrollView
+from kivy.uix.boxlayout import BoxLayout
+from kivymd.uix.dialog import MDDialog
+from kivymd.uix.label import MDLabel
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
+from kivymd.uix.list import MDList, OneLineListItem
 from kivymd.uix.menu import MDDropdownMenu
 from kivymd.uix.spinner import MDSpinner  # ✅ Correct
 from kivy.uix.textinput import TextInput
@@ -380,6 +388,9 @@ class MyApp(MDApp):
     def show_welcome_page(self, username, installed_apps):
         self.root.clear_widgets()
 
+        # Récupérer les tickets
+        self.fetch_tickets()  # Cette méthode définit maintenant self.tickets
+
         self.category = "Choisir une catégorie"
         self.status = "Ouvert"  # Statut par défaut
         self.priorite = "Moyenne"  # Priorité par défaut
@@ -541,17 +552,25 @@ class MyApp(MDApp):
         btn_create_ticket.bind(on_press=self.create_ticket)
         right_layout.add_widget(btn_create_ticket)
 
-        btn_show_comments = MDRaisedButton(text="Afficher les commentaires", md_bg_color=(0.2, 0.8, 0.2, 1))
+        """btn_show_comments = MDRaisedButton(text="Afficher les commentaires", md_bg_color=(0.2, 0.8, 0.2, 1))
         btn_show_comments.bind(on_press=self.show_comments)
-        right_layout.add_widget(btn_show_comments)
+        right_layout.add_widget(btn_show_comments)"""
+
+        # Bouton pour afficher les commentaires
+        btn_show_commentaires = MDRaisedButton(
+            text="Afficher les commentaires",
+            md_bg_color=(0.2, 0.8, 0.2, 1)
+        )
+        btn_show_commentaires.bind(on_press=self.show_all_commentaires)  # Lier à la méthode show_all_commentaires
+        right_layout.add_widget(btn_show_commentaires)
 
         btn_show_attachments = MDRaisedButton(text="Afficher les pièces jointes", md_bg_color=(0.8, 0.2, 0.2, 1))
         btn_show_attachments.bind(on_press=self.show_attachments)
         right_layout.add_widget(btn_show_attachments)
 
-        btn_select_ticket = MDRaisedButton(text="Sélectionner un ticket", md_bg_color=(1, 0.6, 0.2, 1))
+        """btn_select_ticket = MDRaisedButton(text="Sélectionner un ticket", md_bg_color=(1, 0.6, 0.2, 1))
         btn_select_ticket.bind(on_press=self.select_ticket)
-        right_layout.add_widget(btn_select_ticket)
+        right_layout.add_widget(btn_select_ticket)"""
 
         # ✅ Liste des tickets existants
         ticket_scroll_view = ScrollView()
@@ -574,13 +593,42 @@ class MyApp(MDApp):
         Clock.schedule_interval(lambda dt: self.update_notification_icon(), 300)
         self.fetch_tickets()
 
-    # ✅ Fonctions pour gérer la sélection des tickets
-    def select_ticket(self, instance):
-        selected_ticket = self.get_selected_ticket()
-        if selected_ticket:
-            print(f"Ticket sélectionné : {selected_ticket['title']}")
-        else:
-            print("Aucun ticket sélectionné.")
+    def show_all_commentaires(self, instance):
+        # Vérifier si des tickets existent
+        if not hasattr(self, 'tickets') or not self.tickets:
+            self.show_popup("Aucun commentaire", "Aucun ticket disponible.")
+            return
+
+        # Récupérer tous les commentaires de tous les tickets
+        all_commentaires = []
+        for ticket in self.tickets:
+            ticket_id = ticket['id']
+            commentaires = self.get_commentaires_for_ticket(ticket_id)  # Récupérer les commentaires pour ce ticket
+            all_commentaires.extend(commentaires)
+
+        # Créer un layout pour le popup
+        popup_layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
+
+        # Ajouter un label pour le titre
+        title_label = Label(text="Commentaires", size_hint_y=None, height=40, font_size=20, bold=True)
+        popup_layout.add_widget(title_label)
+
+        # Créer un ScrollView pour contenir les commentaires
+        scroll_view = ScrollView()
+        commentaires_layout = BoxLayout(orientation='vertical', size_hint_y=None, spacing=10)
+        commentaires_layout.bind(minimum_height=commentaires_layout.setter('height'))
+
+        # Ajouter chaque commentaire dans le layout
+        for commentaire in all_commentaires:
+            commentaire_label = Label(text=commentaire, size_hint_y=None, height=40, halign='left', valign='middle')
+            commentaires_layout.add_widget(commentaire_label)
+
+        scroll_view.add_widget(commentaires_layout)
+        popup_layout.add_widget(scroll_view)
+
+        # Créer le popup
+        popup = Popup(title='Commentaires', content=popup_layout, size_hint=(0.8, 0.8))
+        popup.open()
 
     def get_selected_ticket(self):
         # Simule la récupération du ticket sélectionné
@@ -638,7 +686,7 @@ class MyApp(MDApp):
         self.ticket_priority_menu.dismiss()
 
 
-    def show_comments(self, instance):
+    """def show_comments(self, instance):
         if not self.selected_ticket_id:
             self.show_popup("Erreur", "Aucun ticket sélectionné.")
             return
@@ -684,7 +732,58 @@ class MyApp(MDApp):
         content.add_widget(btn_close)
 
         popup.content = content
+        popup.open()"""
+
+    def show_commentaires(self, instance, ticket_id):
+        commentaires = self.get_commentaires_for_ticket(ticket_id)  # Récupérer les commentaires pour ce ticket
+
+        # Créer un layout pour le popup
+        popup_layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
+
+        # Ajouter un label pour le titre
+        title_label = Label(text="Commentaires", size_hint_y=None, height=40, font_size=20, bold=True)
+        popup_layout.add_widget(title_label)
+
+        # Créer un ScrollView pour contenir les commentaires
+        scroll_view = ScrollView()
+        commentaires_layout = BoxLayout(orientation='vertical', size_hint_y=None, spacing=10)
+        commentaires_layout.bind(minimum_height=commentaires_layout.setter('height'))
+
+        # Ajouter chaque commentaire dans le layout
+        for commentaire in commentaires:
+            commentaire_label = Label(text=commentaire, size_hint_y=None, height=40, halign='left', valign='middle')
+            commentaires_layout.add_widget(commentaire_label)
+
+        scroll_view.add_widget(commentaires_layout)
+        popup_layout.add_widget(scroll_view)
+
+        # Créer le popup
+        popup = Popup(title='Commentaires', content=popup_layout, size_hint=(0.8, 0.8))
         popup.open()
+
+    def get_commentaires_for_ticket(self, ticket_id):
+        # URL de l'API Django pour récupérer les commentaires d'un ticket
+        api_url = f"http://127.0.0.1:8000/api/auth/tickets/{ticket_id}/commentaires/"
+        headers = {
+            "Authorization": f"Bearer {access_token}"  # Utiliser le token d'accès pour l'authentification
+        }
+
+        try:
+            # Faire une requête GET à l'API Django
+            response = requests.get(api_url, headers=headers)
+            response.raise_for_status()  # Vérifier si la requête a réussi
+
+            # Convertir la réponse JSON en liste de commentaires
+            commentaires_data = response.json()
+            commentaires = [
+                f"{commentaire['auteur']} ({commentaire['date_creation']}): {commentaire['contenu']}"
+                for commentaire in commentaires_data
+            ]
+            return commentaires
+        except requests.exceptions.RequestException as e:
+            print(f"Erreur lors de la récupération des commentaires : {e}")
+            return []
+
 
     def show_attachments(self, instance):
         if not self.selected_ticket_id:
@@ -978,14 +1077,14 @@ class MyApp(MDApp):
             response = requests.get(api_url, headers=headers, timeout=10)
 
             if response.status_code == 200:
-                tickets = response.json()
-                self.display_tickets(tickets)
+                self.tickets = response.json()
+                print(f"Tickets récupérés : {self.tickets}")  # Débogage
             else:
                 self.show_popup("Erreur", f"Échec de la récupération des tickets : {response.json()}")
         except requests.exceptions.RequestException as e:
             self.show_popup("Erreur", f"Impossible de se connecter à l'API : {e}")
 
-    def display_tickets(self, tickets):
+    """def display_tickets(self, tickets):
         # Effacer les tickets actuels
         self.ticket_grid_layout.clear_widgets()
 
@@ -1014,8 +1113,33 @@ class MyApp(MDApp):
 
             # Ajouter le label et le bouton au layout
             self.ticket_grid_layout.add_widget(ticket_label)
-            self.ticket_grid_layout.add_widget(btn_select_ticket)
+            self.ticket_grid_layout.add_widget(btn_select_ticket)"""
 
+    def display_tickets(self, tickets):
+        # Vérifier si la liste des tickets est vide
+        if not tickets:
+            print("Aucun ticket à afficher.")
+            return
+
+        # Parcourir chaque ticket et l'afficher
+        for ticket in tickets:
+            print(f"Ticket ID: {ticket['id']}, Titre: {ticket['title']}, Description: {ticket['description']}")
+
+    """def select_ticket(self, ticket):
+        if isinstance(ticket, str):  # Vérifie si c'est une chaîne JSON
+            try:
+                ticket = json.loads(ticket)  # Convertir en dict
+            except json.JSONDecodeError:
+                print("Erreur : Ticket JSON invalide :", ticket)
+                self.show_popup("Erreur", "Format JSON invalide.")
+                return
+
+        if isinstance(ticket, dict) and 'id' in ticket and 'title' in ticket:
+            self.selected_ticket_id = ticket['id']
+            self.show_popup("Ticket sélectionné", f"Ticket {ticket['title']} sélectionné.")
+        else:
+            print("Données du ticket invalides :", ticket)  # Afficher les données invalides
+            self.show_popup("Erreur", "Données du ticket invalides.")"""
 
     def show_popup(self, title, message):
         popup = Popup(title=title, size_hint=(0.8, 0.4))
